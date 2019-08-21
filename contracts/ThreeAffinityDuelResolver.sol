@@ -15,7 +15,8 @@ interface ERC165Interface {
     function supportsInterface(bytes4 interfaceId) external view returns (bool);
 }
 
-// We use a contract and multiple inheritence to expose this constant.
+
+// We use a contract and multiple inheritance to expose this constant.
 // It's the best that Solidity offers at the moment.
 contract DuelResolverInterfaceId {
     /// @notice The erc165 interface ID
@@ -40,7 +41,7 @@ contract DuelResolverInterface is DuelResolverInterfaceId, ERC165Interface {
     ///         known to cause problems with your duel resolver. If your resolveDuel() function
     ///         can safely work with any affinity value (even if it just ignores the values that
     ///         it doesn't know about), it should return true.
-    function isValidAffinity(uint256 affinity) public pure returns(bool);
+    function isValidAffinity(uint256 affinity) external pure returns(bool);
 
     /// @notice Resolves the duel between two Cheeze Wizards given their chosen move sets, their
     ///         powers, and each Wizard's affinity. It is the responsibility of the Tournament contract
@@ -69,17 +70,17 @@ contract DuelResolverInterface is DuelResolverInterfaceId, ERC165Interface {
 contract ThreeAffinityDuelResolver is DuelResolverInterface {
     /// @dev A bitmask that filters all but the bits that are significant as part of a valid move set for this
     /// duel resolver.
-    bytes32 internal constant moveMask = 0x0303030303000000000000000000000000000000000000000000000000000000;
+    bytes32 public constant MOVE_MASK = 0x0303030303000000000000000000000000000000000000000000000000000000;
 
     /// @dev The moves come in from the front end as 2, 3, and 4; the logic below is simpler if the valid
     /// moves are 0, 1, 2. Thus, we subtract 2 from each value to put things in the range that works well for us.
     /// See WizardConstants for the element values, to understand where 2, 3 and 4 come from.
-    uint256 internal constant moveDelta = 0x0202020202000000000000000000000000000000000000000000000000000000;
+    uint256 public constant MOVE_DELTA = 0x0202020202000000000000000000000000000000000000000000000000000000;
 
     /// @dev The relative weight applied to each round in the duel. We ramp up the weight as the duel progresses
     /// to make the later rounds more impactful, and to minimize the probability of a dead tie (which is super
     /// boring!)
-    uint256 internal constant weightSum = 78 + 79 + 81 + 86 + 100;
+    uint256 public constant WEIGHT_SUM = 78 + 79 + 81 + 86 + 100;
 
     /// @notice Query if a contract implements an interface
     /// @param interfaceId The interface identifier, as specified in ERC-165
@@ -96,10 +97,10 @@ contract ThreeAffinityDuelResolver is DuelResolverInterface {
     /// @param moveSet the moveset to be validated
     function isValidMoveSet(bytes32 moveSet) public pure returns(bool) { // solium-disable-line security/no-assign-params
         // Map the input values 2, 3, 4 onto 0, 1, 2.
-        moveSet = bytes32(uint256(moveSet) - moveDelta);
+        moveSet = bytes32(uint256(moveSet) - MOVE_DELTA);
 
         // Fails if any bit is set outside the allowed mask
-        if (moveSet != (moveSet & moveMask)) {
+        if (moveSet != (moveSet & MOVE_MASK)) {
             return false;
         }
 
@@ -148,8 +149,8 @@ contract ThreeAffinityDuelResolver is DuelResolverInterface {
         int256[5] memory weights = [int256(78), int256(79), int256(81), int256(86), int256(100)];
 
         // Map the input values 2, 3, 4 onto 0, 1, 2 to make the calculations easier.
-        moveSet1 = bytes32(uint256(moveSet1) - moveDelta);
-        moveSet2 = bytes32(uint256(moveSet2) - moveDelta);
+        moveSet1 = bytes32(uint256(moveSet1) - MOVE_DELTA);
+        moveSet2 = bytes32(uint256(moveSet2) - MOVE_DELTA);
         affinity1 -= 2;
         affinity2 -= 2;
 
@@ -223,7 +224,7 @@ contract ThreeAffinityDuelResolver is DuelResolverInterface {
         // power transfer will be > 0.
 
         // Convert the score into a number 0-1
-        uint256 normalizedScoreQ10 = 1024 * uint256(score) / weightSum;
+        uint256 normalizedScoreQ10 = 1024 * uint256(score) / WEIGHT_SUM;
 
         // Because elemental wizards get a bonus (or penalty) when using their affinity spells, there is
         // a chance that the total score for an Elemental Wizard will exceed 100%. We cap it at 100%...
@@ -240,7 +241,7 @@ contract ThreeAffinityDuelResolver is DuelResolverInterface {
         // quite likely (winning by a little), and large if the outcome was unlikely (winning by a lot).
         // By "linearized" we mean that if the outcome was twice as unlikely, the BTR will be doubled.
         // (Please don't ignore the phrase "more or less" here! The true probability distribution depends
-        // on the wizard alignments and is close to a gaussian densitity curve. Approximating this curve
+        // on the wizard alignments and is close to a gaussian density curve. Approximating this curve
         // using a parabola makes it feasible to compute on-chain, and has an error term we can live with...)
         //
         // However, this BTR computed above is only appropriate in a "fair fight"; that is, when the
@@ -255,7 +256,7 @@ contract ThreeAffinityDuelResolver is DuelResolverInterface {
         //
         // The answer is to "bend" the odds so that small wins (which are much more common) favour the stronger
         // wizard, since large wins will favour the weaker wizard. The math below is more magic than science (appropriate
-        // for wizards, I suppose!), but has the impact that -- even thought the stronger wizards has "more to
+        // for wizards, I suppose!), but has the impact that -- even though the stronger wizards has "more to
         // lose" -- the fight is still balanced. Most of the time, the winning margin will be small, and stronger
         // wizard will get a bigger reward than the weaker wizard would get from winning with the same margin.
         // BUT, if they win by a large enough margin, the weak wizard can drain a wizard even 7 times more powerful!
@@ -274,7 +275,7 @@ contract ThreeAffinityDuelResolver is DuelResolverInterface {
         uint256 transferRatioQ10 = _fakePowQ10(baseTransferRatioQ10, 1024 * power2 / power1);
 
         // Return the actual power transferred, which is determined as a fraction of the loser's power
-        // in the preceeding math.
+        // in the preceding math.
         return int256((power2 * transferRatioQ10) >> 10);
     }
 
@@ -298,14 +299,14 @@ contract ThreeAffinityDuelResolver is DuelResolverInterface {
 
         // Round the y value to the nearest 1/64th, while also converting from
         // a denominator of 1024 to a denominator of 64.
-        // Appologies for how unclear this is, but it makes for tighter code!
+        // Apologies for how unclear this is, but it makes for tighter code!
         // A more explicit version would look like this:
         //    float y = float(xQ10) / 1024.0;
         //    y = floor(y + 0.5);
         //    int xQ6 = int(y * 64);
         uint256 yQ6 = (yQ10 + 8) >> 4;
 
-        // Call the recusive internal function to do that actual math
+        // Call the recursive internal function to do that actual math
         return _fakePowInternal(xQ10, yQ6, 64, 5);
     }
 
@@ -347,7 +348,7 @@ contract ThreeAffinityDuelResolver is DuelResolverInterface {
         }
 
         // This is the magic, and -- I'll be honest -- I don't have much other than some
-        // emperical testing to defend it. If we have a fractional power n/d, where n < d
+        // empirical testing to defend it. If we have a fractional power n/d, where n < d
         // we recursively call this function "flipping" everything. We flip the base value
         // x, by using 1-x. And we flip the fractional exponent and use d/n which will
         // result in a power > 1.  And then we flip the result again by using 1-result.

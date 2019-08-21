@@ -27,7 +27,7 @@ contract WizardConstants {
     // The fire, water and wind elements are used both to reflect an affinity
     // of Elemental Wizards for a specific element, and as the moves a
     // Wizard can make during a duel.
-    // Note thta if these values change then `moveMask` and `moveDelta` in
+    // Note that if these values change then `moveMask` and `moveDelta` in
     // ThreeAffinityDuelResolver would need to be updated accordingly.
     uint8 internal constant ELEMENT_FIRE = 2; //010
     uint8 internal constant ELEMENT_WATER = 3; //011
@@ -725,8 +725,8 @@ contract WizardPresale is WizardPresaleNFT, WizardPresaleInterface, WizardConsta
 
         // Make sure the amount we're trying to refund is less than the actual cost of sending it!
         // See https://github.com/ethereum/wiki/wiki/Subtleties for magic values costs.  We can
-        // safley ignore the 25000 additional gas cost for new accounts, as msg.sender is
-        // guarunteed to exist at this point!
+        // safely ignore the 25000 additional gas cost for new accounts, as msg.sender is
+        // guaranteed to exist at this point!
         if (refund > (tx.gasprice * (9000+700))) {
             msg.sender.transfer(refund);
         }

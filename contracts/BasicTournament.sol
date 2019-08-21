@@ -1,4 +1,4 @@
-pragma solidity >=0.5.0 <0.6.0;
+pragma solidity >=0.5.6 <0.6.0;
 
 
 /// @title ERC165Interface
@@ -10,6 +10,7 @@ interface ERC165Interface {
     ///      uses less than 30,000 gas.
     function supportsInterface(bytes4 interfaceId) external view returns (bool);
 }
+
 
 /// @title Shared constants used throughout the Cheeze Wizards contracts
 contract WizardConstants {
@@ -23,7 +24,7 @@ contract WizardConstants {
     // The fire, water and wind elements are used both to reflect an affinity
     // of Elemental Wizards for a specific element, and as the moves a
     // Wizard can make during a duel.
-    // Note thta if these values change then `moveMask` and `moveDelta` in
+    // Note that if these values change then `moveMask` and `moveDelta` in
     // ThreeAffinityDuelResolver would need to be updated accordingly.
     uint8 internal constant ELEMENT_FIRE = 2; //010
     uint8 internal constant ELEMENT_WATER = 3; //011
@@ -199,7 +200,7 @@ contract WizardGuildInterface is IERC721, WizardGuildInterfaceId {
     /// @param sig the signature data; can be longer than 65 bytes for ERC-1654
     function verifySignature(uint256 wizardId, bytes32 hash, bytes calldata sig) external view;
 
-    /// @notice Convienence function that verifies signatures for two wizards using equivalent logic to
+    /// @notice Convenience function that verifies signatures for two wizards using equivalent logic to
     ///         verifySignature(). Included to save on cross-contract calls in the common case where we
     ///         are verifying the signatures of two Wizards who wish to enter into a Duel.
     /// @param wizardId1 The first Wizard ID whose control is in question
@@ -221,7 +222,7 @@ contract WizardGuildInterface is IERC721, WizardGuildInterfaceId {
 
 
 
-// We use a contract and multiple inheritence to expose this constant.
+// We use a contract and multiple inheritance to expose this constant.
 // It's the best that Solidity offers at the moment.
 contract DuelResolverInterfaceId {
     /// @notice The erc165 interface ID
@@ -246,7 +247,7 @@ contract DuelResolverInterface is DuelResolverInterfaceId, ERC165Interface {
     ///         known to cause problems with your duel resolver. If your resolveDuel() function
     ///         can safely work with any affinity value (even if it just ignores the values that
     ///         it doesn't know about), it should return true.
-    function isValidAffinity(uint256 affinity) public pure returns(bool);
+    function isValidAffinity(uint256 affinity) external pure returns(bool);
 
     /// @notice Resolves the duel between two Cheeze Wizards given their chosen move sets, their
     ///         powers, and each Wizard's affinity. It is the responsibility of the Tournament contract
@@ -284,14 +285,14 @@ contract AccessControl {
     ///      be stored offline (i.e. a hardware device kept in a safe).
     address public ceoAddress;
 
-    /// @dev The address of the "day-to-day" operator of various priviledged
+    /// @dev The address of the "day-to-day" operator of various privileged
     ///      functions inside the smart contract. Although the CEO has the power
     ///      to replace the COO, the CEO address doesn't actually have the power
     ///      to do "COO-only" operations. This is to discourage the regular use
     ///      of the CEO account.
     address public cooAddress;
 
-    /// @dev The address that is allowed to move money around. Kept seperate from
+    /// @dev The address that is allowed to move money around. Kept separate from
     ///      the COO because the COO address typically lives on an internet-connected
     ///      computer.
     address payable public cfoAddress;
@@ -331,10 +332,9 @@ contract AccessControl {
         require(msg.sender == cfoAddress, "Only CFO");
         _;
     }
-    
+
     function checkControlAddress(address newController) internal view {
-        require(newController != address(0), "Zero access control address");
-        require(newController != ceoAddress, "CEO address cannot be reused");
+        require(newController != address(0) && newController != ceoAddress, "Invalid CEO address");
     }
 
     /// @notice Assigns a new address to act as the CEO. Only available to the current CEO.
@@ -400,7 +400,7 @@ contract AccessControl {
 ///        slice which would be an Ascension Windows is counted as more or less nothing.
 ///      - The second Window is the Fight Window. This is where all the fun happens! Wizards challenge Wizards,
 ///        and their duels result in power transfers. But beware! If your power level drops to zero (or below
-///        the Blue Mold level), you will be eliminated!
+///        the Blue Mold level), you will be eliminated during the Elimination Phase!
 ///      - The third Window is the Resolution Window. This is a period of time after the Fight Window equal
 ///        to the maximum length of a duel. During the Resolution Window, the only action that most Wizards
 ///        can take is to reveal moves for duels initiated during the Fight Window. However, this is also the
@@ -408,6 +408,9 @@ contract AccessControl {
 ///      - The fourth Window is the Culling Window. During the Elimination Phase, the Culling Window is used
 ///        to permanently remove all Wizards who have been reduced to zero power (are tired), or who have fallen below
 ///        the power level of the inexorable Blue Mold.
+///
+///      Note that since Wizards can't ascend or be culled during Revival Phase, the Ascension and Culling windows
+///        during Revival Phase don't have any utility/meaning until the Revival Phase is over.
 ///
 /// 3. A complete sequence of four Windows is called a SESSION. During the official Cheeze Wizard tournament,
 ///    we will set the Session length to as close to 8 hours as possible (while still using blocks as time
@@ -418,7 +421,7 @@ contract AccessControl {
 ///        .....|^^^^^^^^^^^^^^^^^^ 1 session ^^^^^^^^^^^^^^^^^^^^^|...
 contract TournamentTimeAbstract is AccessControl {
 
-    event Paused(uint256 pauseEndingBlock);
+    event Paused(uint256 pauseEndedBlock);
 
     /// @dev We pack these parameters into a struct to save storage costs.
     struct TournamentTimeParameters {
@@ -426,7 +429,7 @@ contract TournamentTimeAbstract is AccessControl {
         uint48 tournamentStartBlock;
 
         // The block height after which the pause will end.
-        uint48 pauseEndingBlock;
+        uint48 pauseEndedBlock;
 
         // The duration (in blocks) of the Admission Phase.
         uint32 admissionDuration;
@@ -441,6 +444,37 @@ contract TournamentTimeAbstract is AccessControl {
     }
 
     TournamentTimeParameters internal tournamentTimeParameters;
+
+    // Returns all the time related variables that are stored internally.
+    function getTimeParameters() external view returns (
+        uint256 tournamentStartBlock,
+        uint256 pauseEndedBlock,
+        uint256 admissionDuration,
+        uint256 revivalDuration,
+        uint256 duelTimeoutDuration,
+        uint256 ascensionWindowStart,
+        uint256 ascensionWindowDuration,
+        uint256 fightWindowStart,
+        uint256 fightWindowDuration,
+        uint256 resolutionWindowStart,
+        uint256 resolutionWindowDuration,
+        uint256 cullingWindowStart,
+        uint256 cullingWindowDuration) {
+        return (
+            uint256(tournamentTimeParameters.tournamentStartBlock),
+            uint256(tournamentTimeParameters.pauseEndedBlock),
+            uint256(tournamentTimeParameters.admissionDuration),
+            uint256(tournamentTimeParameters.revivalDuration),
+            uint256(tournamentTimeParameters.duelTimeoutDuration),
+            uint256(ascensionWindowParameters.firstWindowStartBlock),
+            uint256(ascensionWindowParameters.windowDuration),
+            uint256(fightWindowParameters.firstWindowStartBlock),
+            uint256(fightWindowParameters.windowDuration),
+            uint256(resolutionWindowParameters.firstWindowStartBlock),
+            uint256(resolutionWindowParameters.windowDuration),
+            uint256(cullingWindowParameters.firstWindowStartBlock),
+            uint256(cullingWindowParameters.windowDuration));
+    }
 
     // This probably looks insane, but there is a method to our madness!
     //
@@ -461,7 +495,7 @@ contract TournamentTimeAbstract is AccessControl {
         uint48 firstWindowStartBlock;
 
         // A copy of the pause ending block, copied into this storage slot to save gas
-        uint48 pauseEndingBlock;
+        uint48 pauseEndedBlock;
 
         // The length of an entire "session" (see above for definitions), ALL windows
         // repeat with a period of one session.
@@ -488,24 +522,29 @@ contract TournamentTimeAbstract is AccessControl {
 
     BlueMoldParameters internal blueMoldParameters;
 
+    function getBlueMoldParameters() external view returns (uint256, uint256, uint256, uint256) {
+        return (
+            blueMoldParameters.blueMoldStartBlock,
+            blueMoldParameters.sessionDuration,
+            blueMoldParameters.moldDoublingDuration,
+            blueMoldParameters.blueMoldBasePower
+        );
+    }
+
     constructor(
         address _cooAddress,
-        uint256 tournamentStartBlock,
-        uint256 admissionDuration,
-        uint256 revivalDuration,
-        uint256 ascensionDuration,
-        uint256 fightDuration,
-        uint256 cullingDuration,
-        uint256 duelTimeoutDuration,
-        uint256 blueMoldBasePower,
-        uint256 sessionsBetweenMoldDoubling
+        uint40 tournamentStartBlock,
+        uint32 admissionDuration,
+        uint32 revivalDuration,
+        uint24 ascensionDuration,
+        uint24 fightDuration,
+        uint24 cullingDuration,
+        uint24 duelTimeoutDuration,
+        uint88 blueMoldBasePower,
+        uint24 sessionsBetweenMoldDoubling
     )
     internal AccessControl(_cooAddress, address(0)) {
         require(tournamentStartBlock > block.number, "Invalid start time");
-
-        // The contract block arithmetic presumes a block number below 2^47,
-        // so we enforce that constraint here to avoid risk of an overflow.
-        require(tournamentStartBlock < 1 << 47, "Start block too high");
 
         // Even if you want to have a very fast Tournament, a timeout of fewer than 20 blocks
         // is asking for trouble. We would always recommend a value >100.
@@ -514,20 +553,29 @@ contract TournamentTimeAbstract is AccessControl {
         // Rather than checking all of these inputs against zero, we just multiply them all together and exploit
         // the fact that if any of them are zero, their product will also be zero.
         // Theoretically, you can find five non-zero numbers that multiply to zero because of overflow.
-        // However, at least one of those numbers would need to be >50 bits long which is large enough that it
-        // would also be an invalid duration! :P
+        // However, at least one of those numbers would need to be >50 bits long which is not the case here.
+        // Note: BasicTournament.revive() depends on blueMoldBasePower always being
+        // positive, so if this constraint somehow ever changes, that function
+        // will need to be verified for correctness.
+        // sessionsBetweenMoldDoubling must be > 0 so that the mold doubles!
         require(
-            (admissionDuration * revivalDuration * ascensionDuration * fightDuration * cullingDuration) != 0,
-            "Time durations must be non-0");
+            (uint256(admissionDuration) *
+            uint256(revivalDuration) *
+            uint256(ascensionDuration) *
+            uint256(fightDuration) *
+            uint256(cullingDuration) *
+            uint256(blueMoldBasePower) *
+            uint256(sessionsBetweenMoldDoubling)) != 0,
+            "Constructor arguments must be non-0");
 
         // The Fight Window needs to be at least twice as long as the Duel Timeout. Necessary to
         // ensure there is enough time to challenge an Ascending Wizard.
-        require(fightDuration >= duelTimeoutDuration * 2, "Fight window too short");
+        require(fightDuration >= uint256(duelTimeoutDuration) * 2, "Fight window too short");
 
         // Make sure the Culling Window is at least as big as a Fight Window
         require(cullingDuration >= duelTimeoutDuration, "Culling window too short");
-
-        uint256 sessionDuration = ascensionDuration + fightDuration + duelTimeoutDuration + cullingDuration;
+        // The sum of 4 uint24 values is always less than uint32. So it won't overflow.
+        uint32 sessionDuration = ascensionDuration + fightDuration + duelTimeoutDuration + cullingDuration;
 
         // Make sure that the end of the Revival Phase coincides with the start of a
         // new session. Many of our calculations depend on this fact!
@@ -535,67 +583,63 @@ contract TournamentTimeAbstract is AccessControl {
 
         tournamentTimeParameters = TournamentTimeParameters({
             tournamentStartBlock: uint48(tournamentStartBlock),
-            pauseEndingBlock: uint48(0),
-            admissionDuration: uint32(admissionDuration),
-            revivalDuration: uint32(revivalDuration),
-            duelTimeoutDuration: uint32(duelTimeoutDuration)
+            pauseEndedBlock: uint48(0),
+            admissionDuration: admissionDuration,
+            revivalDuration: revivalDuration,
+            duelTimeoutDuration: duelTimeoutDuration
         });
 
-        uint256 firstSessionStartBlock = tournamentStartBlock + admissionDuration;
+        // tournamentStartBlock is 40 bits, admissionDuration is 32 bits,
+        // so firstSessionStartBlock is less than 41 bits, which protects the calculations
+        // of the firstWindowStartBlock as below from overflow.
+        uint256 firstSessionStartBlock = uint256(tournamentStartBlock) + uint256(admissionDuration);
 
         // NOTE: ascension windows don't begin until after the Revival Phase is over
         ascensionWindowParameters = WindowParameters({
             firstWindowStartBlock: uint48(firstSessionStartBlock + revivalDuration),
-            pauseEndingBlock: uint48(0),
-            sessionDuration: uint32(sessionDuration),
-            windowDuration: uint32(ascensionDuration)
+            pauseEndedBlock: uint48(0),
+            sessionDuration: sessionDuration,
+            windowDuration: ascensionDuration
         });
 
         fightWindowParameters = WindowParameters({
             firstWindowStartBlock: uint48(firstSessionStartBlock + ascensionDuration),
-            pauseEndingBlock: uint48(0),
-            sessionDuration: uint32(sessionDuration),
-            windowDuration: uint32(fightDuration)
+            pauseEndedBlock: uint48(0),
+            sessionDuration: sessionDuration,
+            windowDuration: fightDuration
         });
 
         resolutionWindowParameters = WindowParameters({
             firstWindowStartBlock: uint48(firstSessionStartBlock + ascensionDuration + fightDuration),
-            pauseEndingBlock: uint48(0),
-            sessionDuration: uint32(sessionDuration),
-            windowDuration: uint32(duelTimeoutDuration)
+            pauseEndedBlock: uint48(0),
+            sessionDuration: sessionDuration,
+            windowDuration: duelTimeoutDuration
         });
-
-        // NOTE: The first Culling Window only occurs after the first Revival Phase is over.
-        uint256 cullingStart = firstSessionStartBlock + revivalDuration + ascensionDuration + fightDuration + duelTimeoutDuration;
 
         cullingWindowParameters = WindowParameters({
-            firstWindowStartBlock: uint48(cullingStart),
-            pauseEndingBlock: uint48(0),
-            sessionDuration: uint32(sessionDuration),
-            windowDuration: uint32(cullingDuration)
+            // NOTE: The first Culling Window only occurs after the first Revival Phase is over.
+            firstWindowStartBlock: uint48(firstSessionStartBlock + revivalDuration + ascensionDuration + fightDuration + duelTimeoutDuration),
+            pauseEndedBlock: uint48(0),
+            sessionDuration: sessionDuration,
+            windowDuration: cullingDuration
         });
-
-        // Note: BasicTournament.revive() depends on blueMoldBasePower always being
-        // positive, so if this constraint somehow ever changes, that function
-        // will need to be verified for correctness
-        require(blueMoldBasePower > 0 && blueMoldBasePower < 1<<88, "Invalid mold power");
-        require(sessionsBetweenMoldDoubling > 0, "The mold must double!");
 
         blueMoldParameters = BlueMoldParameters({
             blueMoldStartBlock: uint48(firstSessionStartBlock + revivalDuration),
-            sessionDuration: uint32(sessionDuration),
-            moldDoublingDuration: uint32(sessionsBetweenMoldDoubling * sessionDuration),
-            blueMoldBasePower: uint88(blueMoldBasePower)
+            sessionDuration: sessionDuration,
+            // uint24 * uint25
+            moldDoublingDuration: uint32(sessionsBetweenMoldDoubling) * uint32(sessionDuration),
+            blueMoldBasePower: blueMoldBasePower
         });
     }
 
     /// @notice Returns true if the current block is in the Revival Phase
     function _isRevivalPhase() internal view returns (bool) {
-        // Copying the stucture into memory once saves gas. Each access to a member variable
+        // Copying the structure into memory once saves gas. Each access to a member variable
         // counts as a new read!
         TournamentTimeParameters memory localParams = tournamentTimeParameters;
 
-        if (block.number <= localParams.pauseEndingBlock) {
+        if (block.number < localParams.pauseEndedBlock) {
             return false;
         }
 
@@ -605,11 +649,11 @@ contract TournamentTimeAbstract is AccessControl {
 
     /// @notice Returns true if the current block is in the Elimination Phase
     function _isEliminationPhase() internal view returns (bool) {
-        // Copying the stucture into memory once saves gas. Each access to a member variable
+        // Copying the structure into memory once saves gas. Each access to a member variable
         // counts as a new read!
         TournamentTimeParameters memory localParams = tournamentTimeParameters;
 
-        if (block.number <= localParams.pauseEndingBlock) {
+        if (block.number < localParams.pauseEndedBlock) {
             return false;
         }
 
@@ -619,11 +663,11 @@ contract TournamentTimeAbstract is AccessControl {
     /// @dev Returns true if the current block is a valid time to enter a Wizard into the Tournament. As in,
     ///      it's either the Admission Phase or the Revival Phase.
     function _isEnterPhase() internal view returns (bool) {
-        // Copying the stucture into memory once saves gas. Each access to a member variable
+        // Copying the structure into memory once saves gas. Each access to a member variable
         // counts as a new read!
         TournamentTimeParameters memory localParams = tournamentTimeParameters;
 
-        if (block.number <= localParams.pauseEndingBlock) {
+        if (block.number < localParams.pauseEndedBlock) {
             return false;
         }
 
@@ -635,12 +679,12 @@ contract TournamentTimeAbstract is AccessControl {
     // defined by the WindowParameters struct passed as an argument.
     function _isInWindow(WindowParameters memory localParams) internal view returns (bool) {
         // We are never "in a window" if the contract is paused
-        if (block.number <= localParams.pauseEndingBlock) {
+        if (block.number < localParams.pauseEndedBlock) {
             return false;
         }
 
         // If we are before the first window of this type, we are obviously NOT in this window!
-        if (block.number <= localParams.firstWindowStartBlock) {
+        if (block.number < localParams.firstWindowStartBlock) {
             return false;
         }
 
@@ -780,49 +824,49 @@ contract TournamentTimeAbstract is AccessControl {
     ///       to optimize the hot paths (which are the modifiers above).
     ///
     /// @param pauseDuration the number of blocks to pause for. CAN NOT exceed the length of one Session.
-    function pause(uint256 pauseDuration) public onlyCOO {
+    function pause(uint256 pauseDuration) external onlyCOO {
         uint256 sessionDuration = ascensionWindowParameters.sessionDuration;
 
         // Require all pauses be less than one session in length
         require(pauseDuration <= sessionDuration, "Invalid pause duration");
 
         // Figure out when our pause will be done
-        uint48 newPauseEndingBlock = uint48(block.number + pauseDuration);
+        uint48 newPauseEndedBlock = uint48(block.number + pauseDuration);
         uint48 tournamentExtensionAmount = uint48(pauseDuration);
 
-        if (block.number <= tournamentTimeParameters.pauseEndingBlock) {
+        if (block.number < tournamentTimeParameters.pauseEndedBlock) {
             // If we are already paused, we need to adjust the tournamentExtension
             // amount to reflect that we are only extending the pause amount, not
             // setting it anew
-            require(tournamentTimeParameters.pauseEndingBlock > newPauseEndingBlock, "Already paused");
+            require(tournamentTimeParameters.pauseEndedBlock > newPauseEndedBlock, "Already paused");
 
-            tournamentExtensionAmount = uint48(newPauseEndingBlock - tournamentTimeParameters.pauseEndingBlock);
+            tournamentExtensionAmount = uint48(newPauseEndedBlock - tournamentTimeParameters.pauseEndedBlock);
         }
 
         // We now need to update all of the various structures where we cached time information
         // to make sure they reflect the new information
         tournamentTimeParameters.tournamentStartBlock += tournamentExtensionAmount;
-        tournamentTimeParameters.pauseEndingBlock = newPauseEndingBlock;
+        tournamentTimeParameters.pauseEndedBlock = newPauseEndedBlock;
 
         ascensionWindowParameters.firstWindowStartBlock += tournamentExtensionAmount;
-        ascensionWindowParameters.pauseEndingBlock = newPauseEndingBlock;
+        ascensionWindowParameters.pauseEndedBlock = newPauseEndedBlock;
 
         fightWindowParameters.firstWindowStartBlock += tournamentExtensionAmount;
-        fightWindowParameters.pauseEndingBlock = newPauseEndingBlock;
+        fightWindowParameters.pauseEndedBlock = newPauseEndedBlock;
 
         resolutionWindowParameters.firstWindowStartBlock += tournamentExtensionAmount;
-        resolutionWindowParameters.pauseEndingBlock = newPauseEndingBlock;
+        resolutionWindowParameters.pauseEndedBlock = newPauseEndedBlock;
 
         cullingWindowParameters.firstWindowStartBlock += tournamentExtensionAmount;
-        cullingWindowParameters.pauseEndingBlock = newPauseEndingBlock;
+        cullingWindowParameters.pauseEndedBlock = newPauseEndedBlock;
 
         blueMoldParameters.blueMoldStartBlock += tournamentExtensionAmount;
 
-        emit Paused(newPauseEndingBlock);
+        emit Paused(newPauseEndedBlock);
     }
 
-    function isPaused() public view returns (bool) {
-        return block.number <= tournamentTimeParameters.pauseEndingBlock;
+    function isPaused() external view returns (bool) {
+        return block.number < tournamentTimeParameters.pauseEndedBlock;
     }
 }
 
@@ -847,6 +891,8 @@ contract TournamentInterface is TournamentInterfaceId, ERC165Interface {
     function isActive() external view returns (bool);
 
     function powerScale() external view returns (uint256);
+
+    function destroy() external;
 }
 
 
@@ -856,7 +902,7 @@ contract TournamentInterface is TournamentInterfaceId, ERC165Interface {
 ///         the following features:
 ///               - All Wizards who enter the Tournament are required to provide a contribution
 ///                 to the Big Cheeze prize pool that is directly proportional to their power
-///                 level. There is no way for some Wizards to have a power level that is disproprtional
+///                 level. There is no way for some Wizards to have a power level that is disproportionate
 ///                 to their pot contribution amount; not even for the Tournament creators.
 ///               - All Tournaments created with this contract follow the time constraints set out in the
 ///                 TournamentTimeAbstract contract. While different Tournament instances might run more
@@ -878,7 +924,9 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
         uint256 wizardId1,
         uint256 wizardId2,
         uint256 timeoutBlock,
-        bool isAscensionBattle
+        bool isAscensionBattle,
+        bytes32 commit1,
+        bytes32 commit2
     );
 
     // A Duel resolves normally, powers are post-resolution values
@@ -890,6 +938,27 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
         bytes32 moveSet2,
         uint256 power1,
         uint256 power2
+    );
+
+    // A Wizard challenges its opponent with the commitment of its moves.
+    event OneSidedCommitAdded(
+        uint256 committingWizardId,
+        uint256 otherWizardId,
+        uint256 committingWizardNonce,
+        uint256 otherWizardNonce,
+        bytes32 commitment
+    );
+
+    // A Wizard cancelled the commitment against its opponent.
+    event OneSidedCommitCancelled(
+        uint256 wizardId
+    );
+
+    // A Wizard revealed its own moves for a Duel.
+    event OneSidedRevealAdded(
+        bytes32 duelId,
+        uint256 committingWizardId,
+        uint256 otherWizardId
     );
 
     // A Duel times out, powers are post-resolution values
@@ -908,6 +977,9 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     // A Wizard in the Ascension Chamber wasn't challenged during the Fight Window, their power triples!
     event AscensionComplete(uint256 wizardId, uint256 power);
 
+    // A Wizard is challenging the ascending Wizard with the commitment of its moves.
+    event AscensionChallenged(uint256 ascendingWizardId, uint256 challengingWizardId, bytes32 commitment);
+
     // A Wizard has been revived; power is the revival amount chosen (above Blue Mold level, below maxPower)
     event Revive(uint256 wizId, uint256 power);
 
@@ -917,7 +989,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     // The winner (or one of the winners) has claimed their portion of the prize.
     event PrizeClaimed(uint256 claimingWinnerId, uint256 prizeAmount);
 
-    // Used to prefix signed data blobs to prevent replay attacks
+    // Used to prefix signed data blobs to prevent from signing a transaction
     byte internal constant EIP191_PREFIX = byte(0x19);
     byte internal constant EIP191_VERSION_DATA = byte(0);
 
@@ -926,17 +998,17 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     ///      cost = power * powerScale
     uint256 public powerScale;
 
-    /// @dev The maximimum power level attainable by a Wizard
+    /// @dev The maximum power level attainable by a Wizard
     uint88 internal constant MAX_POWER = uint88(-1);
 
     // Address of the GateKeeper, likely to be a smart contract, but we don't care if it is
     // TODO: Update this address once the Gate Keeper is deployed.
-    address internal constant gateKeeper = address(0);
+    address public constant GATE_KEEPER = address(0xF46aEEF279A6d5A411E16D87D3767fDa0cEC320E);
 
     // The Wizard Guild contract. This is a variable so subclasses can modify it for
     // testing, but by default it cannot change from this default.
     // TODO: Update this address once the Wizard Guild is deployed.
-    WizardGuildInterface internal constant wizardGuild = WizardGuildInterface(address(0xb4aCd2c618EB426a8E195cCA2194c0903372AC0d));
+    WizardGuildInterface public constant WIZARD_GUILD = WizardGuildInterface(address(0xd3d2Cc1a89307358DB3e81Ca6894442b2DB36CE8));
 
     // The Duel Resolver contract
     DuelResolverInterface public duelResolver;
@@ -968,6 +1040,10 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     ///         look for winners once this gets down to 5 or less!
     uint256 internal remainingWizards;
 
+    function getRemainingWizards() external view returns(uint256) {
+        return remainingWizards;
+    }
+
     /// @notice A structure used to keep track of one-sided commitments that have been made on chain.
     ///         We anticipate most duels will make use of the doubleCommitment mechanism (because it
     ///         uses less gas), but that requires a trusted intermediary, so we provide one-sided commitments
@@ -991,6 +1067,10 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     // There can be at most 1 ascending Wizard at a time, who's ID is stored in this variable. If a second
     // Wizard tries to ascend when someone is already in the chamber, we make 'em fight!
     uint256 internal ascendingWizardId;
+
+    function getAscendingWizardId() external view returns (uint256) {
+        return ascendingWizardId;
+    }
 
     // If there is a Wizard in the growth chamber when a second Wizard attempts to ascend, those two
     // Wizards are paired off into an Ascension Battle. This dictionary keeps track of the IDs of these
@@ -1021,15 +1101,15 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
         address cooAddress_,
         address duelResolver_,
         uint256 powerScale_,
-        uint256 tournamentStartBlock_,
-        uint256 admissionDuration_,
-        uint256 revivalDuration_,
-        uint256 ascensionDuration_,
-        uint256 fightDuration_,
-        uint256 cullingDuration_,
-        uint256 blueMoldBasePower_,
-        uint256 sessionsBetweenMoldDoubling_,
-        uint256 duelTimeoutBlocks_
+        uint40 tournamentStartBlock_,
+        uint32 admissionDuration_,
+        uint32 revivalDuration_,
+        uint24 ascensionDuration_,
+        uint24 fightDuration_,
+        uint24 cullingDuration_,
+        uint88 blueMoldBasePower_,
+        uint24 sessionsBetweenMoldDoubling_,
+        uint24 duelTimeoutBlocks_
     )
         public
         TournamentTimeAbstract(
@@ -1075,7 +1155,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     ///               begins (before any Wizards enter), or after it is over (after all
     ///               Wizards have been eliminated.) It also considers a Tournament inactive
     ///               if 200 * blueWallDoubling blocks have passed. (After 100 doublings
-    ///               ALL of the Wizards will have subcumbed to the Blue Wall, and another
+    ///               ALL of the Wizards will have succumbed to the Blue Wall, and another
     ///               100 doublings should be enough time for the winners to withdraw their
     ///               winnings. Anything left after that is fair game for the GateKeeper to take.)
     function isActive() public view returns (bool) {
@@ -1094,7 +1174,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     //       just include the require() statement in the modifier itself instead of
     //       creating an additional function.
     //
-    //       Unforunately, this contract is very close to the maximum size limit
+    //       Unfortunately, this contract is very close to the maximum size limit
     //       for Ethereum (which is 24576 bytes, as per EIP-170). Modifiers work by
     //       more-or-less copy-and-pasting the code in them into the functions they
     //       decorate. It turns out that copying these modifiers (especially the
@@ -1104,7 +1184,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     //       at a very small gas cost (an internal branch is just 10 gas)).
 
     function checkGateKeeper() internal view {
-        require(msg.sender == gateKeeper, "Only GateKeeper can call");
+        require(msg.sender == GATE_KEEPER, "Only GateKeeper can call");
     }
 
 
@@ -1126,7 +1206,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
 
     function checkController(uint256 wizardId) internal view {
         require(wizards[wizardId].maxPower != 0, "Wizard does not exist");
-        require(wizardGuild.isApprovedOrOwner(msg.sender, wizardId), "Must be Wizard controller");
+        require(WIZARD_GUILD.isApprovedOrOwner(msg.sender, wizardId), "Must be Wizard controller");
     }
 
     // Modifier for functions that only the owner (or an approved operator) should be able to call
@@ -1214,7 +1294,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     function _isReady(uint256 wizardId, BattleWizard memory wizard) internal view returns (bool) {
         // IMPORTANT NOTE: oneSidedCommit() needs to recreate 90% of this logic, because it needs to check to
         //     see if a Wizard is ready, but it allows the Wizard to have an ascension opponent. If you make any
-        //     changes this this function, you should double check that the same edit doesn't need to be made
+        //     changes to this function, you should double check that the same edit doesn't need to be made
         //     to oneSidedCommit().
         return ((wizardId != ascendingWizardId) &&
             (ascensionOpponents[wizardId] == 0) &&
@@ -1243,9 +1323,9 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
 
             require(wizards[wizardId].maxPower == 0, "Wizard already in tournament");
 
-            (, uint88 innatePower, uint8 affinity, ) = wizardGuild.getWizard(wizardId);
+            (, uint88 innatePower, uint8 affinity, ) = WIZARD_GUILD.getWizard(wizardId);
 
-            require(power <= innatePower, "Power exceeds innate power");
+            require(power > 0 && power <= innatePower, "Invalid power");
 
             wizards[wizardId] = BattleWizard({
                 power: power,
@@ -1265,7 +1345,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
 
     /// @dev Brings a tired Wizard back to fightin' strength. Can only be used during the revival
     ///      phase. The buy-back can be to any power level between the Blue Wall power (at the low end)
-    ///      and the previous max power achived by this Wizard in this tournament. This does mean a revival
+    ///      and the previous max power achieved by this Wizard in this tournament. This does mean a revival
     ///      can bring a Wizard back above their innate power! The contribution into the pot MUST be equivalent
     ///      to the cost that would be needed to bring in a new Wizard at the same power level. Can only
     ///      be called by the GateKeeper to allow the GateKeeper to manage the pot contribution rate and
@@ -1295,7 +1375,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     ///         been updated. Can be called by anyone since it can't be abused.
     /// @param wizardId The id of the Wizard to update
     function updateAffinity(uint256 wizardId) external exists(wizardId) {
-        (, , uint8 newAffinity, ) = wizardGuild.getWizard(wizardId);
+        (, , uint8 newAffinity, ) = WIZARD_GUILD.getWizard(wizardId);
         BattleWizard storage wizard = wizards[wizardId];
         require(wizard.affinity == ELEMENT_NOTSET, "Affinity already updated");
         wizard.affinity = newAffinity;
@@ -1328,6 +1408,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
 
     function _checkChallenge(uint256 challengerId, uint256 recipientId) internal view {
         require(pendingCommitments[challengerId].opponentId == 0, "Pending battle already exists");
+        require(recipientId > 0, "No Wizard is ascending");
         require(challengerId != recipientId, "Cannot duel oneself!");
     }
 
@@ -1349,6 +1430,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
 
         // Store a pending commitment that the ascending Wizard can accept
         ascensionCommitment = SingleCommitment({opponentId: wizardId, commitmentHash: commitment});
+        emit AscensionChallenged(ascendingWizardId, wizardId, commitment);
     }
 
     /// @notice Allows the Ascending Wizard to respond to an ascension commitment with their own move commitment,
@@ -1373,7 +1455,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     ///         and there is _always_ a Fight Window between the Ascension Window and the Resolution Window. In other
     ///         words, there is a always a chance for a challenger to battle the Ascending Wizard before the
     ///         ascension can complete.
-    function completeAscension() public duringResolutionWindow {
+    function completeAscension() external duringResolutionWindow {
         require(ascendingWizardId != 0, "No Wizard to ascend");
 
         BattleWizard storage ascendingWiz = wizards[ascendingWizardId];
@@ -1437,6 +1519,13 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
             // The other Wizard does not currently have any pending commitments, we will store a
             // pending commitment so that the other Wizard can pick it up later.
             pendingCommitments[committingWizardId] = SingleCommitment({opponentId: otherWizardId, commitmentHash: commitment});
+
+            emit OneSidedCommitAdded(
+                committingWizardId,
+                otherWizardId,
+                committingWiz.nonce,
+                otherWiz.nonce,
+                commitment);
         } else if (otherCommitment.opponentId == committingWizardId) {
             // We've found a matching commitment! Be sure to order them correctly...
             if (committingWizardId < otherWizardId) {
@@ -1459,6 +1548,11 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
 
     function cancelCommitment(uint256 wizardId) external onlyWizardController(wizardId) {
         require(ascensionOpponents[wizardId] == 0, "Can't cancel Ascension Battle");
+
+        // Only emit the event when pendingCommitment exists.
+        if (pendingCommitments[wizardId].opponentId != 0) {
+            emit OneSidedCommitCancelled(wizardId);
+        }
 
         delete pendingCommitments[wizardId];
     }
@@ -1497,7 +1591,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
         checkExists(wizardId1);
         checkExists(wizardId2);
 
-        // The Wizard IDs must be strictly in ascending order so that we don't treat a battle betwen
+        // The Wizard IDs must be strictly in ascending order so that we don't treat a battle between
         // "wizard 3 and wizard 5" as different than the battle between "wizard 5 and wizard 3".
         // This also ensures that a Wizards isn't trying to duel itself!
         require(wizardId1 < wizardId2, "Wizard IDs must be ordered");
@@ -1511,7 +1605,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
 
             isAscensionBattle = true;
 
-            // We can safely delete the ascensionOppenents values now because either this function
+            // We can safely delete the ascensionOpponents values now because either this function
             // will culminate in a committed duel, or it will revert entirely. It also lets us
             // use the _isReady() convenience function (which treats a Wizard with a non-zero
             // ascension opponent as not ready).
@@ -1528,7 +1622,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
         // Check that the signatures match the duel data and commitments
         bytes32 signedHash1 = _signedHash(wizardId1, wizardId2, wiz1.nonce, wiz2.nonce, commit1);
         bytes32 signedHash2 = _signedHash(wizardId1, wizardId2, wiz1.nonce, wiz2.nonce, commit2);
-        wizardGuild.verifySignatures(wizardId1, wizardId2, signedHash1, signedHash2, sig1, sig2);
+        WIZARD_GUILD.verifySignatures(wizardId1, wizardId2, signedHash1, signedHash2, sig1, sig2);
 
         // If both signatures have passed, we can begin the duel!
         duelId = _beginDuel(wizardId1, wizardId2, commit1, commit2, isAscensionBattle);
@@ -1598,7 +1692,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
 
         duels[duelId] = Duel({timeout: uint128(duelTimeout), isAscensionBattle: isAscensionBattle});
 
-        emit DuelStart(duelId, wizardId1, wizardId2, duelTimeout, isAscensionBattle);
+        emit DuelStart(duelId, wizardId1, wizardId2, duelTimeout, isAscensionBattle, commit1, commit2);
     }
 
     /// @notice Reveals the moves for one of the Wizards in a duel. This should be called rarely, but
@@ -1608,7 +1702,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     ///         it is cryptographically impossible for someone to submit a moveset and salt that matches the
     ///         commitment (which was signed, don't forget!).
     ///
-    ///         Note: This function doens't need exists(wizardId) because an eliminated Wizard would have
+    ///         Note: This function doesn't need exists(wizardId) because an eliminated Wizard would have
     ///               currentDuel == 0
     /// @param committingWizardId The Wizard whose moves are being revealed
     /// @param commit A copy of the commitment used previously, not stored on-chain to save gas
@@ -1682,6 +1776,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
             require(block.number < duels[duelId].timeout, "Duel expired");
             // Store our revealed moves for later resolution
             revealedMoves[duelId][committingWizardId] = moveSet;
+            emit OneSidedRevealAdded(duelId, committingWizardId, otherWizardId);
         }
     }
 
@@ -1699,7 +1794,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     ///         and the other is not) and then let the Battle timeout, or -- if both movesets are invalid --
     ///         don't do any reveals and let the Battle timeout.
     ///
-    ///         Note: This function doens't need exists(wizardId1) exists(wizardId2) because an
+    ///         Note: This function doesn't need exists(wizardId1) exists(wizardId2) because an
     ///               eliminated Wizard would have currentDuel == 0
     /// @param wizardId1 The id of the 1st wizard
     /// @param wizardId2 The id of the 2nd wizard
@@ -1868,7 +1963,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
         wiz1.currentDuel = 0;
         wiz2.currentDuel = 0;
 
-        // Incrememnt the Wizard nonces
+        // Increment the Wizard nonces
         wiz1.nonce += 1;
         wiz2.nonce += 1;
 
@@ -1900,7 +1995,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     ///         didn't reveal their moves. If both don't reveal, there is no power transfer, if one
     ///         revealed, they win ALL the power.
     ///
-    ///         Note: This function doens't need exists(wizardId1) exists(wizardId2) because an
+    ///         Note: This function doesn't need exists(wizardId1) exists(wizardId2) because an
     ///               eliminated Wizard would have currentDuel == 0
     function resolveTimedOutDuel(uint256 wizardId1, uint256 wizardId2) external {
         BattleWizard storage wiz1 = wizards[wizardId1];
@@ -1909,7 +2004,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
         bytes32 duelId = wiz1.currentDuel;
 
         require(duelId != 0 && wiz2.currentDuel == duelId, "Wizards are not dueling");
-        require(block.number > duels[duelId].timeout, "Duel not timed out");
+        require(block.number >= duels[duelId].timeout, "Duel not timed out");
 
         int256 allPower = wiz1.power + wiz2.power;
 
@@ -1930,7 +2025,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
         wiz1.currentDuel = 0;
         wiz2.currentDuel = 0;
 
-        // Incrememnt the Wizard nonces
+        // Increment the Wizard nonces
         wiz1.nonce += 1;
         wiz2.nonce += 1;
 
@@ -1975,7 +2070,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     ///         The way that this (and cullMoldedWithMolded()) works isn't entirely obvious, so please settle
     ///         down for story time!
     ///
-    ///         The "obvious" solution to elminating Wizards from the Tournament is to simply delete
+    ///         The "obvious" solution to eliminating Wizards from the Tournament is to simply delete
     ///         them from the wizards mapping when they are beaten into submission (Oh! Sorry! Marketing
     ///         team says I should say "tired".) But we can't do this during the revival phase, because
     ///         maybe that player wants to revive their Wizard. What's more is that when the Blue Mold
@@ -2005,7 +2100,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     ///
     ///         Simple! If someone wants to permanently remove a Wizard from the tournament, they just have
     ///         to pass in a reference to _another_ Wizard (or Wizards) that _prove_ that the Wizard they
-    ///         want to elminate can't possibly be the winner.
+    ///         want to eliminate can't possibly be the winner.
     ///
     ///         This function handles the simpler of the two cases: If the caller can point to a Wizard
     ///         that is _above_ the Blue Mold level, then _any_ Wizard that is below the Blue
@@ -2047,7 +2142,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     ///         to FIVE other Wizards who have a better claim to the pot.
     ///
     ///         It would be pretty easy to write this function in a way that was very expensive, so in order
-    ///         to save ourselves a lot of gas, we require that the list of Wizards is in strictly decending
+    ///         to save ourselves a lot of gas, we require that the list of Wizards is in strictly descending
     ///         order of power (if two wizards have identical power levels, we consider the one with the
     ///         lower ID as being more powerful).
     ///
@@ -2070,6 +2165,8 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     /// @param moldyWizardIds A list of moldy Wizards, in strictly decreasing power order. Entries 5+ in this list
     ///         will be permanently removed from the Tournament
     function cullMoldedWithMolded(uint256[] calldata moldyWizardIds) external duringCullingWindow {
+        require(moldyWizardIds.length > 0, "Empty ids");
+
         uint256 currentId;
         uint256 currentPower;
         uint256 previousId = moldyWizardIds[0];
@@ -2107,7 +2204,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
 
     /// @notice One last culling function that simply removes Wizards with zero power. They can't
     ///         even get a cut of the final pot... (Worth noting: Culling Windows are only available
-    ///         during the Elmination Phase, so even Wizards that go to zero can't be removed during
+    ///         during the Elimination Phase, so even Wizards that go to zero can't be removed during
     ///         the Revival Phase.)
     function cullTiredWizards(uint256[] calldata wizardIds) external duringCullingWindow {
         for (uint256 i = 0; i < wizardIds.length; i++) {
@@ -2138,7 +2235,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     }
 
     /// @notice A function that allows one of the 5 most powerful Wizards to claim their pro-rata share of
-    ///         the pot if the Tournament ends with all Wizards subcumbing to the Blue Mold. Note that
+    ///         the pot if the Tournament ends with all Wizards succumbing to the Blue Mold. Note that
     ///         all but five of the Moldy Wizards need to first be eliminated with cullMoldedWithMolded().
     ///
     ///         It might seem like it would be tricky to split the pot one player at a time. Imagine that

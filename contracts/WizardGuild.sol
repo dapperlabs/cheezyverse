@@ -12,7 +12,7 @@ contract WizardConstants {
     // The fire, water and wind elements are used both to reflect an affinity
     // of Elemental Wizards for a specific element, and as the moves a
     // Wizard can make during a duel.
-    // Note thta if these values change then `moveMask` and `moveDelta` in
+    // Note that if these values change then `moveMask` and `moveDelta` in
     // ThreeAffinityDuelResolver would need to be updated accordingly.
     uint8 internal constant ELEMENT_FIRE = 2; //010
     uint8 internal constant ELEMENT_WATER = 3; //011
@@ -25,14 +25,14 @@ contract WizardConstants {
 /// @title ERC165Query example
 /// @notice see https://github.com/ethereum/EIPs/blob/master/EIPS/eip-165.md
 contract ERC165Query {
-    bytes4 public constant _INTERFACE_ID_INVALID = 0xffffffff;
-    bytes4 public constant _INTERFACE_ID_ERC165 = 0x01ffc9a7;
+    bytes4 constant _INTERFACE_ID_INVALID = 0xffffffff;
+    bytes4 constant _INTERFACE_ID_ERC165 = 0x01ffc9a7;
 
     function doesContractImplementInterface(
         address _contract,
         bytes4 _interfaceId
     )
-        public
+        internal
         view
         returns (bool)
     {
@@ -90,6 +90,7 @@ contract ERC165Query {
         }
     }
 }
+
 
 
 
@@ -174,6 +175,7 @@ interface ERC165Interface {
     ///      uses less than 30,000 gas.
     function supportsInterface(bytes4 interfaceId) external view returns (bool);
 }
+
 
 
 /// Utility library of inline functions on address payables.
@@ -408,7 +410,7 @@ contract WizardNFT is ERC165Interface, IERC721, WizardConstants, Address {
         // Create the Wizard!
         wizardsById[wizardId] = Wizard({
             affinity: affinity,
-            innatePower: uint88(innatePower),
+            innatePower: innatePower,
             owner: owner,
             metadata: 0
         });
@@ -595,7 +597,7 @@ contract WizardGuildInterface is IERC721, WizardGuildInterfaceId {
     /// @param sig the signature data; can be longer than 65 bytes for ERC-1654
     function verifySignature(uint256 wizardId, bytes32 hash, bytes calldata sig) external view;
 
-    /// @notice Convienence function that verifies signatures for two wizards using equivalent logic to
+    /// @notice Convenience function that verifies signatures for two wizards using equivalent logic to
     ///         verifySignature(). Included to save on cross-contract calls in the common case where we
     ///         are verifying the signatures of two Wizards who wish to enter into a Duel.
     /// @param wizardId1 The first Wizard ID whose control is in question
@@ -625,14 +627,14 @@ contract AccessControl {
     ///      be stored offline (i.e. a hardware device kept in a safe).
     address public ceoAddress;
 
-    /// @dev The address of the "day-to-day" operator of various priviledged
+    /// @dev The address of the "day-to-day" operator of various privileged
     ///      functions inside the smart contract. Although the CEO has the power
     ///      to replace the COO, the CEO address doesn't actually have the power
     ///      to do "COO-only" operations. This is to discourage the regular use
     ///      of the CEO account.
     address public cooAddress;
 
-    /// @dev The address that is allowed to move money around. Kept seperate from
+    /// @dev The address that is allowed to move money around. Kept separate from
     ///      the COO because the COO address typically lives on an internet-connected
     ///      computer.
     address payable public cfoAddress;
@@ -672,10 +674,9 @@ contract AccessControl {
         require(msg.sender == cfoAddress, "Only CFO");
         _;
     }
-    
+
     function checkControlAddress(address newController) internal view {
-        require(newController != address(0), "Zero access control address");
-        require(newController != ceoAddress, "CEO address cannot be reused");
+        require(newController != address(0) && newController != ceoAddress, "Invalid CEO address");
     }
 
     /// @notice Assigns a new address to act as the CEO. Only available to the current CEO.
@@ -798,12 +799,16 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
     ///               |---------------|--------------------------|
     uint256 internal nextWizardIndex;
 
+    function getNextWizardIndex() external view returns (uint256) {
+        return nextWizardIndex;
+    }
+
     // NOTE: uint256(-1) maps to a value with all bits set, both the << and >> operators will fill
-    // in with zeros when acting on an unsigned value. So, "uint256(-1) << 192" resovles to "a bunch
+    // in with zeros when acting on an unsigned value. So, "uint256(-1) << 192" resolves to "a bunch
     /// of ones, followed by 192 zeros"
-    uint256 internal constant seriesOffset = 192;
-    uint256 internal constant seriesMask = uint256(-1) << seriesOffset;
-    uint256 internal constant indexMask = uint256(-1) >> 64;
+    uint256 internal constant SERIES_OFFSET = 192;
+    uint256 internal constant SERIES_MASK = uint256(-1) << SERIES_OFFSET;
+    uint256 internal constant INDEX_MASK = uint256(-1) >> 64;
 
     // The ERC1654 function selector value
     bytes4 internal constant ERC1654_VALIDSIGNATURE = 0x1626ba7e;
@@ -842,12 +847,12 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
     /// @param minter The address which is allowed to mint Wizards in this series. This contract does not
     ///         assume that the minter is a smart contract, but it will presumably be in the vast majority
     ///         of the cases. A minter has absolute control over the creation of new Wizards in an open
-    ///         Series, but CAN NOT manipulate a Series after it has been close, and CAN NOT mainpulate
+    ///         Series, but CAN NOT manipulate a Series after it has been closed, and CAN NOT manipulate
     ///         any Wizards that don't belong to its own Series. (Even if the same minting address is used
     ///         for multiple Series, the Minter only has power over the currently open Series.)
     /// @param reservedIds The number of IDs (from 1 to reservedIds, inclusive) that are reserved for minting
     ///         reserved Wizards. (We use the term "reserved" here, instead of Exclusive, because there
-    ///         are times -- such as during the importation of the PreSale -- when we need to reserve a
+    ///         are times -- such as during the importation of the Presale -- when we need to reserve a
     ///         block of IDs for Wizards that aren't what a user would think of as "exclusive". In Series
     ///         0, the reserved IDs will include all Exclusive Wizards and Presale Wizards. In other Series
     ///         it might also be the case that the set of "reserved IDs" doesn't exactly match the set of
@@ -855,6 +860,17 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
     function openSeries(address minter, uint256 reservedIds) external onlyCOO returns (uint64 seriesId) {
         require(seriesMinter == address(0), "A series is already open");
         require(minter != address(0), "Minter address cannot be 0");
+
+        if (seriesIndex == 0) {
+            // The Presale contract has stopped sales.
+            // The ID of the last wizard sold in the Presale contract is 5974.
+            // So the reservedIds for the first series is hardcoded with that ID in order to ensure:
+            // 1) The next Wizard minted will have its ID continued from the last Presale Wizard.
+            // 2) All the Presale wizards can be minted in this contract with their IDs reserved.
+            require(reservedIds == 5974, "Invalid reservedIds for 1st series");
+        } else {
+            require(reservedIds < 1 << 192, "Invalid reservedIds");
+        }
 
         // NOTE: The seriesIndex is updated when the Series is _closed_, not when it's opened.
         //  (The first Series is Series #0.) So in this function, we just leave the seriesIndex alone.
@@ -923,7 +939,7 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
     ///         REQUIRED that the Minter calls onERC721Received() after calling this function. The following
     ///         code snippet should suffice:
     ///                 // Ensure the Wizard is being assigned to an ERC-721 aware address (either an external address,
-    ///                 // or a smart contract that implements onERC721Received()). We must call onERC721Recieved for
+    ///                 // or a smart contract that implements onERC721Received()). We must call onERC721Received for
     ///                 // each token created because it's allowed for an ERC-721 receiving contract to reject the
     ///                 // transfer based on the properties of the token.
     ///                 if (isContract(owner)) {
@@ -932,7 +948,7 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
     ///                         require(retval == _ERC721_RECEIVED, "Contract owner didn't accept ERC721 transfer");
     ///                     }
     ///                 }
-    ///        Although it would be convenient for mintWizards to call onERC721Recieved, it opens us up to potential
+    ///        Although it would be convenient for mintWizards to call onERC721Received, it opens us up to potential
     ///        reentrancy attacks if the Minter needs to do more state updates after mintWizards() returns.
     /// @param powers the power level of each wizard
     /// @param affinities the Elements of the wizards to create
@@ -950,7 +966,7 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
 
         // We take this storage variables, and turn it into a local variable for the course
         // of this loop to save about 5k gas per wizard.
-        uint256 tempWizardId = (uint256(seriesIndex) << seriesOffset) + nextWizardIndex;
+        uint256 tempWizardId = (uint256(seriesIndex) << SERIES_OFFSET) + nextWizardIndex;
 
         for (uint256 i = 0; i < affinities.length; i++) {
             wizardIds[i] = tempWizardId;
@@ -959,7 +975,7 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
             _createWizard(wizardIds[i], owner, powers[i], affinities[i]);
         }
 
-        nextWizardIndex = tempWizardId & indexMask;
+        nextWizardIndex = tempWizardId & INDEX_MASK;
     }
 
     /// @notice A function to be called that mints a Series of Wizards in the reserved ID range, can only
@@ -986,19 +1002,20 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
         for (uint256 i = 0; i < wizardIds.length; i++) {
             uint256 currentId = wizardIds[i];
 
-            require((currentId & seriesMask) == (uint256(seriesIndex) << seriesOffset), "Wizards not in current series");
+            require((currentId & SERIES_MASK) == (uint256(seriesIndex) << SERIES_OFFSET), "Wizards not in current series");
+            require((currentId & INDEX_MASK) > 0, "Wizards id cannot be zero");
 
             // Ideally, we would compare the requested Wizard index against the reserved range directly. However,
             // it's a bit wasteful to spend storage on a reserved range variable when we can combine some known
             // true facts instead:
-            //         - nextWizardIndex is initialized to reservedRange + 1 when the Series was opend
+            //         - nextWizardIndex is initialized to reservedRange + 1 when the Series was opened
             //         - nextWizardIndex is only incremented when a new Wizard is created
             //         - therefore, the only empty Wizard IDs less than nextWizardIndex are in the reserved range.
             //         - _conjureWizard() will abort if we try to reuse an ID.
             // Combining all of the above, we know that, if the requested index is less than the next index, it
             // either points to a reserved slot or an occupied slot. Trying to reuse an occupied slot will fail,
             // so just checking against nextWizardIndex is sufficient to ensure we're pointing at a reserved slot.
-            require((currentId & indexMask) < nextWizardIndex, "Wizards not in reserved range");
+            require((currentId & INDEX_MASK) < nextWizardIndex, "Wizards not in reserved range");
 
             _createWizard(currentId, owner, powers[i], affinities[i]);
         }
@@ -1019,7 +1036,7 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
             uint256 currentId = wizardIds[i];
             bytes32 currentMetadata = metadata[i];
 
-            require((currentId & seriesMask) == (uint256(seriesIndex) << seriesOffset), "Wizards not in current series");
+            require((currentId & SERIES_MASK) == (uint256(seriesIndex) << SERIES_OFFSET), "Wizards not in current series");
 
             require(wizardsById[currentId].metadata == bytes32(0), "Metadata already set");
 
@@ -1040,7 +1057,7 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
     /// @param wizardId The ID of the Wizard to update affinity of.
     /// @param newAffinity The new affinity of the Wizard.
     function setAffinity(uint256 wizardId, uint8 newAffinity) external onlyMinter {
-        require((wizardId & seriesMask) == (uint256(seriesIndex) << seriesOffset), "Wizard not in current series");
+        require((wizardId & SERIES_MASK) == (uint256(seriesIndex) << SERIES_OFFSET), "Wizard not in current series");
 
         Wizard storage wizard = wizardsById[wizardId];
 
@@ -1055,7 +1072,7 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
 
     /// @notice Returns true if the given "spender" address is allowed to manipulate the given token
     ///         (either because it is the owner of that token, has been given approval to manage that token)
-    function isApprovedOrOwner(address spender, uint256 tokenId) public view returns (bool) {
+    function isApprovedOrOwner(address spender, uint256 tokenId) external view returns (bool) {
         return _isApprovedOrOwner(spender, tokenId);
     }
 
@@ -1094,7 +1111,7 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
         revert("Invalid signature");
     }
 
-    /// @notice Convienence function that verifies signatures for two wizards using equivalent logic to
+    /// @notice Convenience function that verifies signatures for two wizards using equivalent logic to
     ///         verifySignature(). Included to save on cross-contract calls in the common case where we
     ///         are verifying the signatures of two Wizards who wish to enter into a Duel.
     /// @param wizardId1 The first Wizard ID whose control is in question
@@ -1116,7 +1133,7 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
     }
 
     /// @notice An internal function that checks if a given signature is a valid signature for a
-    ///         specific address on a particular hash value. Checks for ERC-1654 compatibilty
+    ///         specific address on a particular hash value. Checks for ERC-1654 compatibility
     ///         first (where the possibleSigner is a smart contract that implements its own
     ///         signature validation), and falls back to ecrecover() otherwise.
     function _validSignatureForAddress(address possibleSigner, bytes32 hash, bytes memory signature)
@@ -1141,8 +1158,9 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
             return false;
         } else {
             // Not a contract, check for a match against an external address
+            // assume EIP 191 signature here
             (bytes32 r, bytes32 s, uint8 v) = SigTools._splitSignature(signature);
-            address signer = ecrecover(hash, v, r, s);
+            address signer = ecrecover(keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", hash)), v, r, s);
 
             // Note: Signer could be address(0) here, but we already checked that possibleSigner isn't zero
             return (signer == possibleSigner);
