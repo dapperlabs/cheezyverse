@@ -12,7 +12,7 @@ contract WizardConstants {
     // The fire, water and wind elements are used both to reflect an affinity
     // of Elemental Wizards for a specific element, and as the moves a
     // Wizard can make during a duel.
-    // Note thta if these values change then `moveMask` and `moveDelta` in
+    // Note that if these values change then `moveMask` and `moveDelta` in
     // ThreeAffinityDuelResolver would need to be updated accordingly.
     uint8 internal constant ELEMENT_FIRE = 2; //010
     uint8 internal constant ELEMENT_WATER = 3; //011
@@ -167,7 +167,7 @@ contract WizardGuildInterface is IERC721, WizardGuildInterfaceId {
     /// @param sig the signature data; can be longer than 65 bytes for ERC-1654
     function verifySignature(uint256 wizardId, bytes32 hash, bytes calldata sig) external view;
 
-    /// @notice Convienence function that verifies signatures for two wizards using equivalent logic to
+    /// @notice Convenience function that verifies signatures for two wizards using equivalent logic to
     ///         verifySignature(). Included to save on cross-contract calls in the common case where we
     ///         are verifying the signatures of two Wizards who wish to enter into a Duel.
     /// @param wizardId1 The first Wizard ID whose control is in question
@@ -200,6 +200,7 @@ interface ERC165Interface {
     function supportsInterface(bytes4 interfaceId) external view returns (bool);
 }
 
+
 // This is kind of a hacky way to expose this constant, but it's the best that Solidity offers!
 contract TournamentInterfaceId {
     bytes4 internal constant _INTERFACE_ID_TOURNAMENT = 0xbd059098;
@@ -217,6 +218,8 @@ contract TournamentInterface is TournamentInterfaceId, ERC165Interface {
     function isActive() external view returns (bool);
 
     function powerScale() external view returns (uint256);
+
+    function destroy() external;
 }
 
 
@@ -231,14 +234,14 @@ contract AccessControl {
     ///      be stored offline (i.e. a hardware device kept in a safe).
     address public ceoAddress;
 
-    /// @dev The address of the "day-to-day" operator of various priviledged
+    /// @dev The address of the "day-to-day" operator of various privileged
     ///      functions inside the smart contract. Although the CEO has the power
     ///      to replace the COO, the CEO address doesn't actually have the power
     ///      to do "COO-only" operations. This is to discourage the regular use
     ///      of the CEO account.
     address public cooAddress;
 
-    /// @dev The address that is allowed to move money around. Kept seperate from
+    /// @dev The address that is allowed to move money around. Kept separate from
     ///      the COO because the COO address typically lives on an internet-connected
     ///      computer.
     address payable public cfoAddress;
@@ -278,10 +281,9 @@ contract AccessControl {
         require(msg.sender == cfoAddress, "Only CFO");
         _;
     }
-    
+
     function checkControlAddress(address newController) internal view {
-        require(newController != address(0), "Zero access control address");
-        require(newController != ceoAddress, "CEO address cannot be reused");
+        require(newController != address(0) && newController != ceoAddress, "Invalid CEO address");
     }
 
     /// @notice Assigns a new address to act as the CEO. Only available to the current CEO.
@@ -414,16 +416,20 @@ contract InauguralGateKeeper is AccessControl, WizardConstants, Address, WizardG
 
     // The Wizard guild contract.
     // TODO: Replace with the address of the contract once it's deployed.
-    WizardGuildInterface internal constant wizardGuild = WizardGuildInterface(address(0xb4aCd2c618EB426a8E195cCA2194c0903372AC0d));
+    WizardGuildInterface public constant WIZARD_GUILD = WizardGuildInterface(address(0xd3d2Cc1a89307358DB3e81Ca6894442b2DB36CE8));
 
     // The Wizard presale contract.
-    WizardPresaleInterface internal constant wizardPresale = WizardPresaleInterface(address(0xd8E4C31D8EB7baD28909a3D2E2dCa6AACDaB1563));
+    WizardPresaleInterface public constant WIZARD_PRESALE = WizardPresaleInterface(address(0xd8E4C31D8EB7baD28909a3D2E2dCa6AACDaB1563));
 
     /// @dev The ratio between the cost of a Wizard (in wei) and the power of the Wizard.
     ///      power = cost / POWER_SCALE
     ///      cost = power * POWER_SCALE
     uint256 internal constant POWER_SCALE = 1000;
     uint256 internal tournamentPowerScale;
+
+    function getTournamentPowerScale() external view returns (uint256) {
+        return tournamentPowerScale;
+    }
 
     /// @dev The constant conversion factor used for elementalWizardIncrement
     uint256 private constant TENTH_BASIS_POINTS = 100000;
@@ -469,14 +475,14 @@ contract InauguralGateKeeper is AccessControl, WizardConstants, Address, WizardG
     }
 
     modifier onlyWizardController(uint256 wizardId) {
-        require(wizardGuild.isApprovedOrOwner(msg.sender, wizardId), "Must be Wizard controller");
+        require(WIZARD_GUILD.isApprovedOrOwner(msg.sender, wizardId), "Must be Wizard controller");
         _;
     }
 
     /// @dev The presale contract will be sending Ether directly to this contract,
     ///      so we need it to have a payable fallback.
     function() external payable {
-        require(msg.sender == address(wizardPresale), "Don't send funds to GateKeeper");
+        require(msg.sender == address(WIZARD_PRESALE) || msg.sender == address(tournament), "Don't send funds to GateKeeper");
     }
 
     /// @notice Registers the address of the Tournament with the GateKeeper. This can't be passed
@@ -526,7 +532,7 @@ contract InauguralGateKeeper is AccessControl, WizardConstants, Address, WizardG
     ///         here function you can conjure yourself "a stench of Cheeze Wizards"!
     /// @dev This function is careful to bundle all of the external calls (_transferRefund() and onERC721Received())
     ///         at the end of the function to limit the risk of reentrancy attacks.
-    /// @param affinities The elemental affinites of the Wizards, can mix and match any valid types.
+    /// @param affinities The elemental affinities of the Wizards, can mix and match any valid types.
     ///        Valid elements are defined in `WizardConstants`, see the constants with names starting
     ///        `ELEMENT_`. ELEMENT_NOTSET is not valid for regular Wizards (unlike Exclusive Wizards).
     function conjureWizardMulti(uint8[] memory affinities) public payable
@@ -537,7 +543,7 @@ contract InauguralGateKeeper is AccessControl, WizardConstants, Address, WizardG
         require(msg.value >= totalCost, "Insufficient funds");
 
         // Mint the requested Wizards in the guild contract, assigning ownership to the sender
-        wizardIds = wizardGuild.mintWizards(powers, affinities, msg.sender);
+        wizardIds = WIZARD_GUILD.mintWizards(powers, affinities, msg.sender);
 
         // Enter the new Wizards into the Tournament
         tournament.enterWizards.value(contribution)(wizardIds, powers);
@@ -597,13 +603,13 @@ contract InauguralGateKeeper is AccessControl, WizardConstants, Address, WizardG
         require(msg.value >= totalCost, "Insufficient funds");
 
         // Mint the requested Wizards via the guild contract
-        wizardGuild.mintReservedWizards(wizardIds, localPowers, affinities, owner);
+        WIZARD_GUILD.mintReservedWizards(wizardIds, localPowers, affinities, owner);
 
         // Enter the new Wizards into the Tournament
         tournament.enterWizards.value(contribution)(wizardIds, localPowers);
 
         // Ensure the Wizards are being assigned to an ERC-721 aware address (either an external address,
-        // or a smart contract that implements onERC721Received()). We must call onERC721Recieved for
+        // or a smart contract that implements onERC721Received()). We must call onERC721Received for
         // each token minted because it's allowed for an ERC-721 receiving contract to reject the
         // transfer based on the properties of the token.
         if (isContract(owner)) {
@@ -675,12 +681,12 @@ contract InauguralGateKeeper is AccessControl, WizardConstants, Address, WizardG
     function absorbPresaleWizards(uint256[] calldata wizardIds) external {
         // Bulk fetch the Wizards from the presale contract. Note that this will also delete those Wizards from the
         // presale contract, and will also transfer the funds used to purchase those Wizards to this contract.
-        // Obviously, a failed require() statement later in this funciton will undo that transfer and those deletes.
+        // Obviously, a failed require() statement later in this function will undo that transfer and those deletes.
         (
             address[] memory owners,
              uint256[] memory powers,
              uint8[] memory affinities
-        ) = wizardPresale.absorbWizardMulti(wizardIds);
+        ) = WIZARD_PRESALE.absorbWizardMulti(wizardIds);
 
         uint256 contribution = 0;
         address theOwner = owners[0];
@@ -693,7 +699,7 @@ contract InauguralGateKeeper is AccessControl, WizardConstants, Address, WizardG
         }
 
         // Mint the requested Wizards in the guild contract
-        wizardGuild.mintReservedWizards(wizardIds, localPowers, affinities, theOwner);
+        WIZARD_GUILD.mintReservedWizards(wizardIds, localPowers, affinities, theOwner);
 
         // Enter the new Wizards into the Tournament
         tournament.enterWizards.value(contribution)(wizardIds, localPowers);
@@ -719,7 +725,7 @@ contract InauguralGateKeeper is AccessControl, WizardConstants, Address, WizardG
         require(newAffinity > ELEMENT_NOTSET && newAffinity <= MAX_ELEMENT, "Must choose a valid affinity");
 
         // The guild will enforce the Wizard doesn't already have an affinity set.
-        wizardGuild.setAffinity(wizardId, newAffinity);
+        WIZARD_GUILD.setAffinity(wizardId, newAffinity);
     }
 
     /// @notice Determine the power of a Wizard based on their price.
@@ -750,12 +756,23 @@ contract InauguralGateKeeper is AccessControl, WizardConstants, Address, WizardG
         msg.sender.transfer(address(this).balance);
     }
 
+
     /// @notice Allows the COO to destroy this contract if it's not needed anymore.
+    /// @notice Can't be destoryed if the Tournament still exists.
     function destroy() external onlyCOO {
         require(address(this).balance == 0, "Drain the funds first");
-        require(address(tournament) == address(0) || tournament.isActive() == false, "Tournament active");
+        require(address(tournament) == address(0), "Destroy Tournament first");
 
         selfdestruct(msg.sender);
+    }
+
+    /// @notice Allow the COO to destroy the Tournament contract.
+    function destroyTournament() external onlyCOO {
+        if (address(tournament) != address(0)) {
+            require(tournament.isActive() == false, "Tournament active");
+            tournament.destroy();
+            tournament = TournamentInterface(0);
+        }
     }
 
     /// @notice Utility function that refunds any overpayment to the sender; smart
@@ -769,8 +786,8 @@ contract InauguralGateKeeper is AccessControl, WizardConstants, Address, WizardG
 
         // Make sure the amount we're trying to refund is less than the actual cost of sending it!
         // See https://github.com/ethereum/wiki/wiki/Subtleties for magic values costs.  We can
-        // safley ignore the 25000 additional gas cost for new accounts, as msg.sender is
-        // guarunteed to exist at this point!
+        // safely ignore the 25000 additional gas cost for new accounts, as msg.sender is
+        // guaranteed to exist at this point!
         if (refund > (tx.gasprice * (9000+700))) {
             msg.sender.transfer(refund);
         }
