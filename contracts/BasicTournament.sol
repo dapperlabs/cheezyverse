@@ -2120,10 +2120,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
         for (uint256 i = 0; i < wizardIds.length; i++) {
             uint256 wizardId = wizardIds[i];
             if (wizards[wizardId].maxPower != 0 && wizards[wizardId].power < moldLevel) {
-                delete wizards[wizardId];
-                remainingWizards--;
-
-                emit WizardElimination(wizardId);
+                _deleteWizard(wizardId);
             }
         }
     }
@@ -2177,6 +2174,8 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
         // require(moldyWizardsIds.length > 5, "No wizards to eliminate");
 
         require(previousPower < _blueMoldPower(), "Not moldy");
+        // The power of a dueling molded Wizard isn't finalized. So shouldn't be used for culling other wizards.
+        require(wizards[previousId].currentDuel == 0, "Dueling");
 
         for (uint256 i = 1; i < moldyWizardIds.length; i++) {
             currentId = moldyWizardIds[i];
@@ -2189,17 +2188,26 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
                 ((currentPower == previousPower) && (currentId > previousId)),
                 "Wizards not strictly ordered");
 
-            if (i >= 5)
-            {
-                delete wizards[currentId];
-                remainingWizards--;
-
-                emit WizardElimination(currentId);
+            if (i >= 5) {
+                _deleteWizard(currentId);
+            } else {
+                // Preventing a dueling molded wizards from culling other wizards.
+                require(wizards[currentId].currentDuel == 0, "Dueling");
             }
 
             previousId = currentId;
             previousPower = currentPower;
         }
+    }
+
+    // @notice Utility function to delete a wizard from storage.
+    //         It makes sure the wizard is not current dueling,
+    //         because deleting a dueling wizard will lock the other wizard forever.
+    function _deleteWizard(uint256 wizardId) internal {
+        require(wizards[wizardId].currentDuel == 0, "Wizard is dueling");
+        delete wizards[wizardId];
+        remainingWizards--;
+        emit WizardElimination(wizardId);
     }
 
     /// @notice One last culling function that simply removes Wizards with zero power. They can't
@@ -2210,10 +2218,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
         for (uint256 i = 0; i < wizardIds.length; i++) {
             uint256 wizardId = wizardIds[i];
             if (wizards[wizardId].maxPower != 0 && wizards[wizardId].power == 0) {
-                delete wizards[wizardId];
-                remainingWizards--;
-
-                emit WizardElimination(wizardId);
+                _deleteWizard(wizardId);
             }
         }
     }
