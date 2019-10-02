@@ -208,13 +208,6 @@ contract Address {
 ///     Derived from: https://github.com/OpenZeppelin/openzeppelin-solidity/tree/v2.2.0
 contract WizardNFT is ERC165Interface, IERC721, WizardConstants, Address {
 
-    /// @notice Transfer of a Wizard between different owners.
-    event Transfer(address from, address to, uint256 wizardId);
-    /// @notice Approval for another address to transfer a Wizard.
-    event Approval(address owner, address approved, uint256 wizardId);
-    /// @notice Approval for another address to transfer all Wizards owned by a single address.
-    event ApprovalForAll(address owner, address operator, bool approved);
-
     /// @notice Emitted when a wizard token is created.
     event WizardConjured(uint256 wizardId, uint8 affinity, uint256 innatePower);
 
