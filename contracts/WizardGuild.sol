@@ -758,6 +758,7 @@ contract ERC1654 {
 }
 
 
+
 /// @title The master organization behind all Cheeze Wizardry. The source of all them Wiz.
 contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Query {
 
@@ -1142,7 +1143,7 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
             if (doesContractImplementInterface(possibleSigner, ERC1654_VALIDSIGNATURE)) {
                 // cast to ERC1654
                 ERC1654 tso = ERC1654(possibleSigner);
-                bytes4 result = tso.isValidSignature(hash, signature);
+                bytes4 result = tso.isValidSignature(keccak256(abi.encodePacked(hash)), signature);
                 if (result == ERC1654_VALIDSIGNATURE) {
                     return true;
                 }

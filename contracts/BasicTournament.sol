@@ -60,6 +60,7 @@ contract ERC1654 {
 
 
 
+
 /**
  * @title IERC165
  * @dev https://eips.ethereum.org/EIPS/eip-165
@@ -838,7 +839,7 @@ contract TournamentTimeAbstract is AccessControl {
             // If we are already paused, we need to adjust the tournamentExtension
             // amount to reflect that we are only extending the pause amount, not
             // setting it anew
-            require(tournamentTimeParameters.pauseEndedBlock > newPauseEndedBlock, "Already paused");
+            require(tournamentTimeParameters.pauseEndedBlock < newPauseEndedBlock, "Already paused");
 
             tournamentExtensionAmount = uint48(newPauseEndedBlock - tournamentTimeParameters.pauseEndedBlock);
         }
@@ -983,8 +984,20 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     // A Wizard has been revived; power is the revival amount chosen (above Blue Mold level, below maxPower)
     event Revive(uint256 wizId, uint256 power);
 
-    // One Wizard sent all of its power to another. "givingWizId" has zero power after this
-    event PowerGifted(uint256 givingWizId, uint256 receivingWizId, uint256 amountGifted);
+    uint8 internal constant REASON_COMPLETE_ASCENSION = 1;
+    uint8 internal constant REASON_RESOLVE_ONE_SIDED_ASCENSION_BATTLE = 2;
+    uint8 internal constant REASON_GIFT_POWER = 3;
+    // One Wizard sent all of its power to another. "sendingWizId" has zero power after this
+    // reason is a enum type to distinguish between the different reasons that caused the power transfer.
+    //   1: The power transfer was caused by the completeAscension function.
+    //        An ascending wizard did not respond to a challenge, and loses all its power to the challenging wizard
+    //   2: The power transfer was caused by the resolveOneSidedAscensionBattle function.
+    //        A wizard in an ascension pair up did not commit moves during the fight window,
+    //        and the other wizard who did commit moves will take all of the non-committing wizard’s power
+    //   3: The power transfer was caused by the giftPower function.
+    //        The controller of a wizard elected to call a function that donates all of their wizard’s power
+    //        to another wizard of their choosing
+    event PowerTransferred(uint256 sendingWizId, uint256 receivingWizId, uint256 amountTransferred, uint8 reason);
 
     // The winner (or one of the winners) has claimed their portion of the prize.
     event PrizeClaimed(uint256 claimingWinnerId, uint256 prizeAmount);
@@ -1417,6 +1430,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     ///         exactly who they will be fighting!)
     function challengeAscending(uint256 wizardId, bytes32 commitment) external duringFightWindow onlyWizardController(wizardId) {
         require(ascensionCommitment.opponentId == 0, "Wizard already challenged");
+
         _checkChallenge(wizardId, ascendingWizardId);
 
         // Ascension Battles MUST come well before the end of the fight window to give the
@@ -1463,7 +1477,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
         if (ascensionCommitment.opponentId != 0) {
             // Someone challenged the ascending Wizard, but the ascending Wizard didn't fight!
             // You. Are. Outtahere!
-            ascendingWiz.power = 0;
+            _transferPower(ascendingWizardId, ascensionCommitment.opponentId, REASON_COMPLETE_ASCENSION);
         }
         else {
             // Oh lucky day! The Wizard survived a complete fight cycle without any challengers
@@ -1471,8 +1485,8 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
             //
             // A note to the naive: THIS WILL NEVER ACTUALLY HAPPEN.
             _updatePower(ascendingWiz, ascendingWiz.power * 3);
+            ascendingWiz.nonce += 1;
         }
-        ascendingWiz.nonce += 1;
 
         emit AscensionComplete(ascendingWizardId, ascendingWiz.power);
 
@@ -1991,6 +2005,38 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
         }
     }
 
+    /// @notice Utility function to transfer all power from sending Wizard to receiving Wizard
+    /// and emit a PowerTransferred event
+    function _transferPower(uint256 sendingWizardId, uint256 receivingWizardId, uint8 reason) internal {
+        BattleWizard storage sendingWiz = wizards[sendingWizardId];
+        BattleWizard storage receivingWiz = wizards[receivingWizardId];
+
+        _updatePower(receivingWiz, receivingWiz.power + sendingWiz.power);
+
+        emit PowerTransferred(sendingWizardId, receivingWizardId, sendingWiz.power, reason);
+
+        sendingWiz.power = 0;
+        // update the nonces to reflect the state change and invalidate any pending commitments
+        sendingWiz.nonce += 1;
+        receivingWiz.nonce += 1;
+    }
+
+    /// @notice used for when wizards locked in an ascension battle but one wizard didn't submit their commit
+    function resolveOneSidedAscensionBattle(uint256 wizardId) external duringResolutionWindow {
+        uint256 opponentId = ascensionOpponents[wizardId];
+        require(opponentId != 0, "No opponent");
+
+        SingleCommitment memory commit = pendingCommitments[wizardId];
+        require(commit.opponentId == opponentId, "No commit");
+
+        _transferPower(opponentId, wizardId, REASON_RESOLVE_ONE_SIDED_ASCENSION_BATTLE);
+
+        // clean up state
+        delete pendingCommitments[wizardId];
+        delete ascensionOpponents[wizardId];
+        delete ascensionOpponents[opponentId];
+    }
+
     /// @notice Resolves a duel that has timed out. This can only happen if one or both players
     ///         didn't reveal their moves. If both don't reveal, there is no power transfer, if one
     ///         revealed, they win ALL the power.
@@ -2003,8 +2049,8 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
 
         bytes32 duelId = wiz1.currentDuel;
 
-        require(duelId != 0 && wiz2.currentDuel == duelId, "Wizards are not dueling");
-        require(block.number >= duels[duelId].timeout, "Duel not timed out");
+        require(duelId != 0 && wiz2.currentDuel == duelId);
+        require(block.number >= duels[duelId].timeout);
 
         int256 allPower = wiz1.power + wiz2.power;
 
@@ -2049,20 +2095,10 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     function giftPower(uint256 sendingWizardId, uint256 receivingWizardId) external
         onlyWizardController(sendingWizardId) exists(receivingWizardId) duringFightWindow
     {
-        BattleWizard storage sendingWiz = wizards[sendingWizardId];
-        BattleWizard storage receivingWiz = wizards[receivingWizardId];
+        require(sendingWizardId != receivingWizardId);
+        require(isReady(sendingWizardId) && isReady(receivingWizardId));
 
-        require(sendingWizardId != receivingWizardId, "Can't gift power to yourself");
-        require(isReady(sendingWizardId) && isReady(receivingWizardId), "Wizard not ready");
-
-        emit PowerGifted(sendingWizardId, receivingWizardId, sendingWiz.power);
-
-        _updatePower(receivingWiz, sendingWiz.power + receivingWiz.power);
-        sendingWiz.power = 0;
-
-        // update the nonces to reflect the state change and invalidate any pending commitments
-        sendingWiz.nonce += 1;
-        receivingWiz.nonce += 1;
+        _transferPower(sendingWizardId, receivingWizardId, REASON_GIFT_POWER);
     }
 
     /// @notice A function that will permanently remove eliminated Wizards from the smart contract.
