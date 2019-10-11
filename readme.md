@@ -1,5 +1,4 @@
 
-
 #Cheeze Wizards Source Code
 
 **Thanks everyone for participating!**
@@ -23,4 +22,6 @@ Welcome to our hackathon and best of luck!
 
 *Dapper Labs team*
 
+If you are looking for the Cheeze Wizards API documentation:
+https://docs.alchemyapi.io/docs/cheeze-wizards-api
 
