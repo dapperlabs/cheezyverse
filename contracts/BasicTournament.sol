@@ -1009,6 +1009,11 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     /// @dev The ratio between the cost of a Wizard (in wei) and the power of the wizard.
     ///      power = cost / powerScale
     ///      cost = power * powerScale
+    /// @dev Note the "cost" here is the cost for the GateKeeper to mint a wizard in Tournament, not the
+    ///      cost for a user to acquire a certain power of wizard.
+    ///      GateKeeper has a hardcoded MAX_POWER_SCALE, which is 1000, so Tournament's powerScale is usually
+    ///      lower than MAX_POWER_SCALE in order for the GateKeeper to be profitable. Also see the comments on the
+    ///      powerScale_ argument in Tournament's constructor function.
     uint256 public powerScale;
 
     /// @dev The maximum power level attainable by a Wizard
@@ -1016,12 +1021,12 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
 
     // Address of the GateKeeper, likely to be a smart contract, but we don't care if it is
     // TODO: Update this address once the Gate Keeper is deployed.
-    address public constant GATE_KEEPER = address(0xF46aEEF279A6d5A411E16D87D3767fDa0cEC320E);
+    address public constant GATE_KEEPER = address(0x673B537956a28e40aAA8D929Fd1B6688C1583dda);
 
     // The Wizard Guild contract. This is a variable so subclasses can modify it for
     // testing, but by default it cannot change from this default.
     // TODO: Update this address once the Wizard Guild is deployed.
-    WizardGuildInterface public constant WIZARD_GUILD = WizardGuildInterface(address(0xd3d2Cc1a89307358DB3e81Ca6894442b2DB36CE8));
+    WizardGuildInterface public constant WIZARD_GUILD = WizardGuildInterface(address(0x35B7838dd7507aDA69610397A85310AE0abD5034));
 
     // The Duel Resolver contract
     DuelResolverInterface public duelResolver;
@@ -1113,6 +1118,14 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     constructor(
         address cooAddress_,
         address duelResolver_,
+        // Note the InauguralGateKeeper defines the MAX_POWER_SCALE to be 1000. And the power scale here is supposed to be
+        // less than MAX_POWER_SCALE in order for the GateKeeper to be profitable.
+        // For example, If the Tournament uses 500 as the powerScale_, then 50% of the ether sent with the conjureWizard call will
+        // go to the GateKeeper and the other 50% will be forwarded to the Tournament.
+        // That means, with 500 as the powerScale_ of the Tournament, if a user calls GateKeeper's conjureWizard with 1 ether,
+        // then 0.5 ether will be forwarded to the Tournament contract as the pot prize to mint a wizard with 1000 power,
+        // and 0.5 ether will be retained in the GateKeeper contract as its earning.
+        // So using 1000 as the powerScale_ of the Tournament would make the GateKeeper unprofitable.
         uint256 powerScale_,
         uint40 tournamentStartBlock_,
         uint32 admissionDuration_,

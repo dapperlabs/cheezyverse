@@ -416,15 +416,15 @@ contract InauguralGateKeeper is AccessControl, WizardConstants, Address, WizardG
 
     // The Wizard guild contract.
     // TODO: Replace with the address of the contract once it's deployed.
-    WizardGuildInterface public constant WIZARD_GUILD = WizardGuildInterface(address(0xd3d2Cc1a89307358DB3e81Ca6894442b2DB36CE8));
+    WizardGuildInterface public constant WIZARD_GUILD = WizardGuildInterface(address(0x35B7838dd7507aDA69610397A85310AE0abD5034));
 
     // The Wizard presale contract.
-    WizardPresaleInterface public constant WIZARD_PRESALE = WizardPresaleInterface(address(0xd8E4C31D8EB7baD28909a3D2E2dCa6AACDaB1563));
+    WizardPresaleInterface public constant WIZARD_PRESALE = WizardPresaleInterface(address(0x2F4Bdafb22bd92AA7b7552d270376dE8eDccbc1E));
 
     /// @dev The ratio between the cost of a Wizard (in wei) and the power of the Wizard.
-    ///      power = cost / POWER_SCALE
-    ///      cost = power * POWER_SCALE
-    uint256 internal constant POWER_SCALE = 1000;
+    ///      power = cost / MAX_POWER_SCALE
+    ///      cost = power * MAX_POWER_SCALE
+    uint256 internal constant MAX_POWER_SCALE = 1000;
     uint256 internal tournamentPowerScale;
 
     function getTournamentPowerScale() external view returns (uint256) {
@@ -503,7 +503,7 @@ contract InauguralGateKeeper is AccessControl, WizardConstants, Address, WizardG
             tournament.supportsInterface(_INTERFACE_ID_TOURNAMENT), "Invalid Tournament");
 
         tournamentPowerScale = tournament.powerScale();
-        require(tournamentPowerScale <= POWER_SCALE, "Power scale too high");
+        require(tournamentPowerScale <= MAX_POWER_SCALE, "Power scale too high");
     }
 
     /// @notice This is it folks, the main event! The way for the world to get new Wizards! Does
@@ -732,13 +732,13 @@ contract InauguralGateKeeper is AccessControl, WizardConstants, Address, WizardG
     /// @param cost The price of the Wizard in wei.
     /// @return The power of the Wizard (cast to uint88).
     function costToPower(uint256 cost) public pure returns (uint88 power) {
-        return uint88(cost / POWER_SCALE);
+        return uint88(cost / MAX_POWER_SCALE);
     }
 
     /// @param power The power of the Wizard.
     /// @return The cost of the Wizard in wei.
     function powerToCost(uint88 power) public pure returns (uint256 cost) {
-        return power * POWER_SCALE;
+        return power * MAX_POWER_SCALE;
     }
 
     /// @notice Computes the number of wei required to be sent to the Tournament
