@@ -14,9 +14,9 @@ We tried to make everything easy so you can build  awesome things on top
 
 ## Design Assets
 
-.AI file with key design assets as well as an awesome PDF with brand guidelines – thanks Carmen! 
+Key design assets and an awesome brand guideline PDF – thanks Carmen! 
 
-https://drive.google.com/drive/folders/1q0QDe1U_qw4rF_Yil32wNcGsbBAxk3oH
+https://drive.google.com/drive/u/0/folders/1tOjWaGQTL_r-scBK5KKhkonFwXNsHRef
 
 
 ## Smart Contracts
