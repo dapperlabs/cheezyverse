@@ -9,6 +9,7 @@ We thought we'd lean in: this repo contains final source code for the five core 
 
 We tried to make everything easy so you can build  awesome things on top
 
+
 # Cheeze Wizards Resources
 
 ## Design Assets
@@ -42,4 +43,7 @@ The Cheeze Wizards API is hosted by our partner Alchemy:
 Ideas for what to build: 
 * https://medium.com/dapperlabs/a-list-of-things-you-can-build-on-top-of-cheeze-wizards-da9d94851121
 
-Welcome to the CheezyVerse and best of luck!
+CheezyVerse homepage:
+* https://www.cheezewizards.com/cheezyverse
+
+Welcome to Cheeze Wizards and best of luck!
