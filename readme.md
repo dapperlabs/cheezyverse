@@ -1,9 +1,7 @@
 
-#Cheeze Wizards Source Code
+# Welcome to Cheeze Wizards
 
-**Welcome to Cheeze Wizards**
-
-Cheeze Wizards is the world's first blockchain battle royale (with cheese)!
+Cheeze Wizards is the world's first blockchain battle royale (with cheese)
 
 One of blockchain’s best qualities is the freedom for anyone to build on top of their favorite dapps––all without having to ask for parmesan! 
 
@@ -11,6 +9,7 @@ We thought we'd lean in: this repo contains final source code for the five core 
 
 We tried to make everything easy so you can build  awesome things on top
 
+# Cheeze Wizards Resources
 
 ## Design Assets
 
