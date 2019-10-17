@@ -839,7 +839,7 @@ contract TournamentTimeAbstract is AccessControl {
             // If we are already paused, we need to adjust the tournamentExtension
             // amount to reflect that we are only extending the pause amount, not
             // setting it anew
-            require(tournamentTimeParameters.pauseEndedBlock < newPauseEndedBlock, "Already paused");
+            require(tournamentTimeParameters.pauseEndedBlock < newPauseEndedBlock);
 
             tournamentExtensionAmount = uint48(newPauseEndedBlock - tournamentTimeParameters.pauseEndedBlock);
         }
@@ -1021,12 +1021,12 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
 
     // Address of the GateKeeper, likely to be a smart contract, but we don't care if it is
     // TODO: Update this address once the Gate Keeper is deployed.
-    address public constant GATE_KEEPER = address(0x673B537956a28e40aAA8D929Fd1B6688C1583dda);
+    address public constant GATE_KEEPER = address(0x68132EB4BfD84b2D6A23ec4fB1B106F5C8574F2D);
 
     // The Wizard Guild contract. This is a variable so subclasses can modify it for
     // testing, but by default it cannot change from this default.
     // TODO: Update this address once the Wizard Guild is deployed.
-    WizardGuildInterface public constant WIZARD_GUILD = WizardGuildInterface(address(0x35B7838dd7507aDA69610397A85310AE0abD5034));
+    WizardGuildInterface public constant WIZARD_GUILD = WizardGuildInterface(address(0x0d8c864DA1985525e0af0acBEEF6562881827bd5));
 
     // The Duel Resolver contract
     DuelResolverInterface public duelResolver;
@@ -1154,7 +1154,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
         duelResolver = DuelResolverInterface(duelResolver_);
         require(
             duelResolver_ != address(0) &&
-            duelResolver.supportsInterface(_INTERFACE_ID_DUELRESOLVER), "Invalid DuelResolver");
+            duelResolver.supportsInterface(_INTERFACE_ID_DUELRESOLVER));
 
         powerScale = powerScale_;
     }
@@ -2057,6 +2057,8 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
     ///         Note: This function doesn't need exists(wizardId1) exists(wizardId2) because an
     ///               eliminated Wizard would have currentDuel == 0
     function resolveTimedOutDuel(uint256 wizardId1, uint256 wizardId2) external {
+        // This check is required in order to prevent attackers from wiping out wizards in a timed out duels.
+        require(wizardId1 != wizardId2, "Same Wizard");
         BattleWizard storage wiz1 = wizards[wizardId1];
         BattleWizard storage wiz2 = wizards[wizardId2];
 
@@ -2072,8 +2074,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
             // would have been resolved). Transfer all of the power from two to one.
             _updatePower(wiz1, allPower);
             wiz2.power = 0;
-            }
-        else if (revealedMoves[duelId][wizardId2] != 0) {
+        } else if (revealedMoves[duelId][wizardId2] != 0) {
             // The second Wizard revealed, so it drains the first.
             _updatePower(wiz2, allPower);
             wiz1.power = 0;
@@ -2340,7 +2341,7 @@ contract BasicTournament is TournamentInterface, TournamentTimeAbstract, WizardC
 
     /// @notice Allows the GateKeeper to destroy this contract if it's not needed anymore.
     function destroy() external onlyGateKeeper {
-        require(isActive() == false, "Tournament active");
+        require(isActive() == false);
 
         selfdestruct(msg.sender);
     }

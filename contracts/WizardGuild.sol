@@ -856,12 +856,20 @@ contract WizardGuild is AccessControl, WizardNFT, WizardGuildInterface, ERC165Qu
         require(minter != address(0), "Minter address cannot be 0");
 
         if (seriesIndex == 0) {
-            // The Presale contract has stopped sales.
-            // The ID of the last wizard sold in the Presale contract is 5974.
-            // So the reservedIds for the first series is hardcoded with that ID in order to ensure:
-            // 1) The next Wizard minted will have its ID continued from the last Presale Wizard.
-            // 2) All the Presale wizards can be minted in this contract with their IDs reserved.
-            require(reservedIds == 5974, "Invalid reservedIds for 1st series");
+            // The last wizard sold in the unpasteurized Tournament at the time the Presale contract
+            // was destroyed is 6133.
+            //
+            // The unpasteurized Tournament contract is the Tournament contract that doesn't have the
+            // "Same Wizard" check in the resolveTimedOutDuel function.
+
+            // The wizards, which were minted in the unpasteurized Tournament before the Presale contract
+            // was destroyed, will be minted again in the new Tournament contract with their ID reserved.
+            //
+            // So the reason the reservedIds is hardcoded here is to ensure:
+            // 1) The next Wizard minted will have its ID continued from this above wizard ID.
+            // 2) The Presale wizards and some wizards minted in the unpasteurized Tournament contract,
+            //    can be minted in this contract with their ID reserved.
+            require(reservedIds == 6133, "Invalid reservedIds for 1st series");
         } else {
             require(reservedIds < 1 << 192, "Invalid reservedIds");
         }
