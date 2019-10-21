@@ -14,9 +14,9 @@ We tried to make everything easy so you can build  awesome things on top
 
 ## Design Assets
 
-Key design assets and an awesome brand guideline PDF – thanks Carmen! 
+Key design assets and an awesome brand guideline PDF:
 
-https://drive.google.com/drive/u/0/folders/1tOjWaGQTL_r-scBK5KKhkonFwXNsHRef
+https://drive.google.com/a/axiomzen.co/file/d/1-N-SLJYYLzeN5pMEXPm0vqpU5Kyhx71_/view?usp=sharing
 
 
 ## Smart Contracts
